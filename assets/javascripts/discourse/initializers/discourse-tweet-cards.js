@@ -117,9 +117,9 @@ function renderCard(tweet) {
   } = tweet;
 
   const locale = document.documentElement.lang || "en";
-  const date = new Date(created_timestamp * 1000).toLocaleDateString(
+  const date = new Date(created_timestamp * 1000).toLocaleString(
     locale,
-    { year: "numeric", month: "short", day: "numeric" }
+    { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
   );
 
   const stats = [
