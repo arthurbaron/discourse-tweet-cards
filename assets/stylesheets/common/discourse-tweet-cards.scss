@@ -1,0 +1,189 @@
+.tweet-card {
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+  max-width: 550px;
+  background: var(--secondary);
+  // Subtle shadow in light themes, invisible in dark themes (would look odd)
+  box-shadow: dark-light-choose(0 1px 4px rgba(0, 0, 0, 0.06), none);
+  font-size: 0.95em;
+  line-height: 1.5;
+  box-sizing: border-box;
+
+  &-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  &-author {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: inherit;
+    overflow: hidden;
+
+    &:hover {
+      text-decoration: none;
+
+      .tweet-card-name {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  &-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+  }
+
+  &-author-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  &-name {
+    font-weight: 700;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // X brand blue: intentionally not a theme variable, it's a recognisable brand element
+  &-verified {
+    width: 17px;
+    height: 17px;
+    fill: #1d9bf0;
+    flex-shrink: 0;
+  }
+
+  &-handle {
+    color: var(--primary-medium);
+    font-size: 0.875em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-x-logo {
+    color: var(--primary-medium);
+    text-decoration: none;
+    flex-shrink: 0;
+    margin-left: 8px;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--primary);
+    }
+
+    svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+      display: block;
+    }
+  }
+
+  &-text {
+    color: var(--primary);
+    margin: 0 0 12px;
+    word-break: break-word;
+
+    a {
+      color: var(--tertiary);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  &-media {
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    display: grid;
+    gap: 2px;
+
+    img {
+      width: 100%;
+      height: auto;
+      max-height: 400px;
+      object-fit: cover;
+      display: block;
+    }
+
+    &--2,
+    &--3,
+    &--4 {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  &-gif {
+    width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+    display: block;
+    border-radius: 8px;
+    background: #000;
+  }
+
+  &-video-thumb {
+    position: relative;
+    line-height: 0;
+    display: block;
+    border-radius: 8px;
+    overflow: hidden;
+
+    img {
+      width: 100%;
+    }
+  }
+
+  &-play-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5em;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+  }
+
+  &-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--primary-very-low);
+    color: var(--primary-medium);
+    font-size: 0.875em;
+  }
+
+  &-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  &-date {
+    margin-left: auto;
+  }
+}
