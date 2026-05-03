@@ -52,20 +52,9 @@
   &-name {
     font-weight: 700;
     color: var(--primary);
-    display: flex;
-    align-items: center;
-    gap: 3px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  // X brand blue: intentionally not a theme variable, it's a recognisable brand element
-  &-verified {
-    width: 17px;
-    height: 17px;
-    fill: #1d9bf0;
-    flex-shrink: 0;
   }
 
   &-handle {
