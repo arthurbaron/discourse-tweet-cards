@@ -149,8 +149,6 @@ function renderCard(tweet) {
   );
 
   const stats = [
-    replies ? `<span title="Replies">${formatCount(replies)} replies</span>` : null,
-    retweets ? `<span title="Retweets">${formatCount(retweets)} retweets</span>` : null,
     likes ? `<span title="Likes">${formatCount(likes)} likes</span>` : null,
     views ? `<span title="Views">${formatCount(views)} views</span>` : null,
   ]
