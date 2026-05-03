@@ -62,6 +62,28 @@ function renderTweetText(text) {
     );
 }
 
+function renderLinkCard(card) {
+  if (!card?.url) {
+    return "";
+  }
+  const image = card.image?.url
+    ? `<img class="tweet-card-link-image" src="${safeText(card.image.url)}" alt="" loading="lazy">`
+    : "";
+  const description = card.description
+    ? `<p class="tweet-card-link-description">${safeText(card.description)}</p>`
+    : "";
+  return `
+    <a href="${safeText(card.url)}" target="_blank" rel="noopener nofollow" class="tweet-card-link">
+      ${image}
+      <div class="tweet-card-link-body">
+        <span class="tweet-card-link-domain">${safeText(card.domain || new URL(card.url).hostname)}</span>
+        <p class="tweet-card-link-title">${safeText(card.title || "")}</p>
+        ${description}
+      </div>
+    </a>
+  `.trim();
+}
+
 function renderMedia(media, tweetUrl) {
   if (!media?.photos?.length && !media?.videos?.length) {
     return "";
@@ -114,7 +136,11 @@ function renderCard(tweet) {
     created_timestamp,
     url,
     media,
+    card,
   } = tweet;
+
+  // X strips the card URL from the displayed text — do the same
+  const displayText = card ? text.replace(/\s*https?:\/\/\S+\s*$/, "").trim() : text;
 
   const locale = document.documentElement.lang || "en";
   const date = new Date(created_timestamp * 1000).toLocaleString(
@@ -153,8 +179,9 @@ function renderCard(tweet) {
           </svg>
         </a>
       </div>
-      <div class="tweet-card-text">${renderTweetText(text)}</div>
+      <div class="tweet-card-text">${renderTweetText(displayText)}</div>
       ${renderMedia(media, url)}
+      ${renderLinkCard(card)}
       <div class="tweet-card-footer">
         <div class="tweet-card-stats">${stats}</div>
         <time class="tweet-card-date">${date}</time>

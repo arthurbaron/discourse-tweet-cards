@@ -8,5 +8,5 @@ register_asset "stylesheets/common/discourse-tweet-cards.scss"
 
 extend_content_security_policy(
   connect_src: %w[https://api.fxtwitter.com],
-  img_src: %w[https://gif.fxtwitter.com]
+  img_src: %w[https://gif.fxtwitter.com https://pbs.twimg.com]
 )
