@@ -45,6 +45,59 @@ function safeText(str) {
   return d.innerHTML;
 }
 
+// safeText escapes &, < and > but not quotes, which is not enough for a value
+// that lands inside an HTML attribute.
+function safeAttr(str) {
+  return safeText(str).replace(/"/g, "&quot;");
+}
+
+// video.twimg.com refuses any request carrying a Referer other than x.com, so
+// linking a <video> straight at it returns 403 from inside a forum page.
+// video.fxtwitter.com mirrors the exact same paths, fetches server-side (no
+// browser Referer involved) and supports range requests, so playback and
+// seeking work normally.
+function proxiedMediaUrl(url) {
+  return url.replace(
+    "https://video.twimg.com/",
+    "https://video.fxtwitter.com/"
+  );
+}
+
+// Cap on how much data playback may pull. X serves adaptive HLS; we pick a
+// single mp4 instead, so this is where quality trades off against mobile data.
+const MAX_VIDEO_BITRATE = 2_000_000;
+
+// Tallest a clip may render. Portrait ones would otherwise take over the post.
+const MAX_VIDEO_HEIGHT = 500;
+
+// Height alone cannot cap a portrait clip: the element would stay full width and
+// letterbox itself. Deriving a max width from the height cap keeps the box tight
+// around the footage instead. Both are emitted inline so the frame is reserved
+// before any bytes arrive and the post never jumps.
+function videoBox(video, maxHeight) {
+  const hasSize = video.width > 0 && video.height > 0;
+  const aspect = hasSize ? video.width / video.height : 16 / 9;
+  return {
+    ratio: hasSize ? `${video.width} / ${video.height}` : "16 / 9",
+    cappedWidth: Math.round(maxHeight * aspect),
+  };
+}
+
+function pickVideoSource(video) {
+  const mp4s = (video.formats || [])
+    .filter((f) => f.container === "mp4" && f.url)
+    .sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
+
+  if (!mp4s.length) {
+    return video.url || null;
+  }
+
+  const withinBudget = mp4s.filter(
+    (f) => (f.bitrate || 0) <= MAX_VIDEO_BITRATE
+  );
+  return (withinBudget[withinBudget.length - 1] || mp4s[0]).url;
+}
+
 function renderTweetText(text) {
   return safeText(text)
     .replace(/\n/g, "<br>")
@@ -107,14 +160,32 @@ function renderMedia(media, tweetUrl) {
       items.push(
         `<img class="tweet-card-gif" src="${safeText(gifUrl)}" alt="GIF" loading="lazy">`
       );
-    } else if (video.thumbnail_url) {
-      // Regular video: Twitter CDN blocks cross-origin requests, link to tweet instead.
-      items.push(
-        `<a href="${safeText(tweetUrl)}" target="_blank" rel="noopener nofollow" class="tweet-card-video-thumb">` +
-          `<img src="${safeText(video.thumbnail_url)}" alt="Video" loading="lazy">` +
-          `<div class="tweet-card-play-icon" aria-hidden="true">▶</div>` +
-          `</a>`
-      );
+    } else {
+      const source = pickVideoSource(video);
+
+      if (source) {
+        // preload="metadata" is only a hint: browsers buffer a few seconds
+        // ahead anyway, so expect a few hundred KB before anyone presses play.
+        // Still far short of the whole file, which is the point.
+        const { ratio, cappedWidth } = videoBox(video, MAX_VIDEO_HEIGHT);
+        const poster = video.thumbnail_url
+          ? ` poster="${safeAttr(video.thumbnail_url)}"`
+          : "";
+
+        items.push(
+          `<video class="tweet-card-video" controls playsinline preload="metadata"` +
+            ` style="aspect-ratio: ${ratio}; max-width: min(100%, ${cappedWidth}px)"${poster}` +
+            ` src="${safeAttr(proxiedMediaUrl(source))}"></video>`
+        );
+      } else if (video.thumbnail_url) {
+        // No playable source in the response: fall back to opening on X.
+        items.push(
+          `<a href="${safeText(tweetUrl)}" target="_blank" rel="noopener nofollow" class="tweet-card-video-thumb">` +
+            `<img src="${safeText(video.thumbnail_url)}" alt="Video" loading="lazy">` +
+            `<div class="tweet-card-play-icon" aria-hidden="true">▶</div>` +
+            `</a>`
+        );
+      }
     }
   }
 
@@ -139,7 +210,7 @@ function renderCard(tweet) {
     card,
   } = tweet;
 
-  // X strips the card URL from the displayed text — do the same
+  // X strips the card URL from the displayed text, do the same
   const displayText = card ? text.replace(/\s*https?:\/\/\S+\s*$/, "").trim() : text;
 
   const locale = document.documentElement.lang || "en";
@@ -225,17 +296,22 @@ export default {
   name: "discourse-tweet-cards",
   initialize() {
     withPluginApi("1.0.0", (api) => {
+      // This callback is deliberately synchronous. Discourse only treats a
+      // returned *function* as a cleanup hook, and an async callback would
+      // hand it a Promise instead, so the fetching runs fire-and-forget.
       api.decorateCookedElement(
-        async (el) => {
+        (el) => {
           const targets = collectTweetTargets(el);
           if (!targets.length) {
             return;
           }
 
-          await Promise.all(
-            targets.map(async ({ id, el: target }) => {
-              const tweet = await fetchTweet(id);
-              if (!tweet) {
+          const rendered = [];
+          let discarded = false;
+
+          for (const { id, el: target } of targets) {
+            fetchTweet(id).then((tweet) => {
+              if (discarded || !tweet) {
                 return;
               }
               const wrapper = document.createElement("div");
@@ -243,11 +319,28 @@ export default {
               const cardEl = wrapper.firstElementChild;
               preventDiscourseClickInterception(cardEl);
               target.replaceWith(cardEl);
-            })
-          );
+              rendered.push(cardEl);
+            });
+          }
+
+          // Runs when the post is rerendered or leaves the stream. Without it a
+          // video keeps buffering and holding memory after its post is gone.
+          return () => {
+            discarded = true;
+            for (const cardEl of rendered) {
+              for (const video of cardEl.querySelectorAll("video")) {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+              }
+            }
+          };
         },
         {
           id: "discourse-tweet-cards",
+          // Ignored on current Discourse, which dropped the option entirely.
+          // Kept for older versions. Timing no longer depends on it either
+          // way: the card is swapped in asynchronously, after adoption.
           afterAdopt: true,
           onlyStream: true,
         }
