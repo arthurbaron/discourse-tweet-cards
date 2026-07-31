@@ -99,21 +99,107 @@ function pickVideoSource(video) {
   return (withinBudget[withinBudget.length - 1] || mp4s[0]).url;
 }
 
-function renderTweetText(text) {
-  return safeText(text)
-    .replace(/\n/g, "<br>")
-    .replace(
-      /(https?:\/\/t\.co\/\S+)/g,
-      '<a href="$1" target="_blank" rel="noopener nofollow">$1</a>'
+function plainText(str) {
+  return safeText(str).replace(/\n/g, "<br>");
+}
+
+function externalLink(href, label) {
+  return (
+    `<a href="${safeAttr(href)}" target="_blank" rel="noopener nofollow">` +
+    `${safeText(label)}</a>`
+  );
+}
+
+// `literal` is the exact slice the facet covers, so it still carries the @ or #
+// that the entity data leaves out.
+function renderFacet(facet, literal) {
+  switch (facet.type) {
+    case "url":
+      // display is the readable form X shows, e.g. arsenal.com/news rather than
+      // the t.co shortlink, and replacement is where it actually goes.
+      return externalLink(
+        facet.replacement || facet.original || literal,
+        facet.display || literal
+      );
+    case "mention":
+      return externalLink(`https://x.com/${facet.original}`, literal);
+    case "hashtag":
+      return externalLink(
+        `https://x.com/hashtag/${encodeURIComponent(facet.original ?? literal.slice(1))}`,
+        literal
+      );
+    case "symbol":
+      return externalLink(
+        `https://x.com/search?q=${encodeURIComponent(literal)}`,
+        literal
+      );
+    case "bold":
+      return `<strong>${plainText(literal)}</strong>`;
+    case "italic":
+      return `<em>${plainText(literal)}</em>`;
+    case "underline":
+      return `<u>${plainText(literal)}</u>`;
+    case "strikethrough":
+      return `<s>${plainText(literal)}</s>`;
+    // The media itself is rendered separately; X does not show its URL either.
+    case "media":
+    case "inline_media":
+      return "";
+    default:
+      return plainText(literal);
+  }
+}
+
+// Replaces regex matching on the rendered HTML, which broke on any hashtag or
+// handle outside plain ASCII. The API hands us exact entity offsets instead.
+//
+// Two traps in that data. First, Twitter counts offsets in Unicode code points
+// while JS strings are indexed in UTF-16, so one emoji earlier in the text shifts
+// every later index by one and naive slicing tears the emoji in half. Splitting
+// to a code point array fixes that. Second, several facets can cover the same
+// range, for instance two photos sharing one t.co link.
+function renderTweetText(tweet) {
+  const raw = tweet.raw_text;
+  if (!raw?.text) {
+    return plainText(tweet.text || "");
+  }
+
+  const chars = Array.from(raw.text);
+  const [start, end] = raw.display_text_range ?? [0, chars.length];
+  const cardUrl = tweet.card?.url;
+
+  const facets = (raw.facets || [])
+    .filter(
+      (f) =>
+        f.indices?.length === 2 && f.indices[0] >= start && f.indices[1] <= end
     )
-    .replace(
-      /@(\w+)/g,
-      '<a href="https://x.com/$1" target="_blank" rel="noopener nofollow">@$1</a>'
-    )
-    .replace(
-      /#(\w+)/g,
-      '<a href="https://x.com/hashtag/$1" target="_blank" rel="noopener nofollow">#$1</a>'
-    );
+    .sort((a, b) => a.indices[0] - b.indices[0] || b.indices[1] - a.indices[1]);
+
+  let out = "";
+  let cursor = start;
+
+  for (const facet of facets) {
+    const [from, to] = facet.indices;
+    if (from < cursor) {
+      continue;
+    }
+
+    // A link card stands in for the URL it was built from, so drop that URL from
+    // the text the way X does.
+    if (cardUrl && facet.type === "url" && to === end) {
+      out += plainText(chars.slice(cursor, from).join("")).replace(
+        /(\s|<br>)+$/,
+        ""
+      );
+      return out;
+    }
+
+    out += plainText(chars.slice(cursor, from).join(""));
+    out += renderFacet(facet, chars.slice(from, to).join(""));
+    cursor = to;
+  }
+
+  return out + plainText(chars.slice(cursor, end).join(""));
 }
 
 function renderLinkCard(card) {
@@ -214,7 +300,6 @@ function renderMedia(media, tweetUrl) {
 function renderCard(tweet) {
   const {
     author,
-    text,
     likes,
     retweets,
     replies,
@@ -224,9 +309,6 @@ function renderCard(tweet) {
     media,
     card,
   } = tweet;
-
-  // X strips the card URL from the displayed text, do the same
-  const displayText = card ? text.replace(/\s*https?:\/\/\S+\s*$/, "").trim() : text;
 
   const locale = document.documentElement.lang || "en";
   const date = new Date(created_timestamp * 1000).toLocaleString(
@@ -258,7 +340,7 @@ function renderCard(tweet) {
           </svg>
         </a>
       </div>
-      <div class="tweet-card-text">${renderTweetText(displayText)}</div>
+      <div class="tweet-card-text">${renderTweetText(tweet)}</div>
       ${renderMedia(media, url)}
       ${renderLinkCard(card)}
       <div class="tweet-card-footer">
