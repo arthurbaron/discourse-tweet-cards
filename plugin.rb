@@ -1,6 +1,6 @@
 # name: discourse-tweet-cards
 # about: Renders X/Twitter links as native tweet cards via the fxtwitter API
-# version: 0.2.0
+# version: 0.3.0
 # authors: Online Arsenal Community
 # url: https://github.com/arthurbaron/discourse-tweet-cards
 
@@ -12,6 +12,6 @@ register_asset "stylesheets/common/discourse-tweet-cards.scss"
 # working if core starts including them in the default policy.
 extend_content_security_policy(
   connect_src: %w[https://api.fxtwitter.com],
-  img_src: %w[https://gif.fxtwitter.com https://pbs.twimg.com],
+  img_src: %w[https://pbs.twimg.com],
   media_src: %w[https://video.fxtwitter.com]
 )

@@ -69,6 +69,7 @@ const MAX_VIDEO_BITRATE = 2_000_000;
 
 // Tallest a clip may render. Portrait ones would otherwise take over the post.
 const MAX_VIDEO_HEIGHT = 500;
+const MAX_GIF_HEIGHT = 400;
 
 // Height alone cannot cap a portrait clip: the element would stay full width and
 // letterbox itself. Deriving a max width from the height cap keeps the box tight
@@ -151,15 +152,29 @@ function renderMedia(media, tweetUrl) {
   }
 
   for (const video of media.videos || []) {
-    if (video.type === "gif" && video.url) {
-      // d.fxtwitter.com redirects tweet_video/*.mp4 to gif.fxtwitter.com/*.gif —
-      // their own CDN, no Twitter auth required. Construct the URL directly.
-      const gifUrl = video.url
-        .replace("https://video.twimg.com/", "https://gif.fxtwitter.com/")
-        .replace(/\.mp4$/, ".gif");
-      items.push(
-        `<img class="tweet-card-gif" src="${safeText(gifUrl)}" alt="GIF" loading="lazy">`
-      );
+    if (video.type === "gif") {
+      // X stores "GIFs" as silent mp4 and only presents them as GIFs. We used to
+      // route them through gif.fxtwitter.com, which transcodes to a real .gif,
+      // roughly 18x the bytes for the same few seconds. Serving the source mp4
+      // looped is both smaller and smoother.
+      const source = pickVideoSource(video);
+
+      if (source) {
+        const { ratio, cappedWidth } = videoBox(video, MAX_GIF_HEIGHT);
+        const poster = video.thumbnail_url
+          ? ` poster="${safeAttr(video.thumbnail_url)}"`
+          : "";
+        // preload="none" plus no autoplay attribute: nothing is fetched until
+        // activateGifs sees the element enter the viewport.
+        items.push(
+          `<div class="tweet-card-gif-wrap" style="max-width: min(100%, ${cappedWidth}px)">` +
+            `<video class="tweet-card-gif" muted loop playsinline preload="none"` +
+            ` aria-label="GIF" style="aspect-ratio: ${ratio}"${poster}` +
+            ` src="${safeAttr(proxiedMediaUrl(source))}"></video>` +
+            `<span class="tweet-card-gif-badge" aria-hidden="true">GIF</span>` +
+            `</div>`
+        );
+      }
     } else {
       const source = pickVideoSource(video);
 
@@ -254,6 +269,47 @@ function renderCard(tweet) {
   `.trim();
 }
 
+// GIFs only start loading once they are actually on screen, and pause again when
+// they leave. A topic full of them would otherwise pull every clip at once, which
+// is most of the point of moving off the .gif route. Returns a disposer.
+function activateGifs(cardEl) {
+  const gifs = cardEl.querySelectorAll("video.tweet-card-gif");
+  if (!gifs.length) {
+    return null;
+  }
+
+  // Someone who asked the OS for less motion should not get looping video.
+  // Give them the poster frame plus controls to opt in instead.
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    for (const gif of gifs) {
+      gif.setAttribute("controls", "");
+      gif.removeAttribute("loop");
+      gif.preload = "metadata";
+    }
+    return null;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const { target, isIntersecting } of entries) {
+        if (isIntersecting) {
+          // play() rejects if the element is torn down mid-call; nothing to do.
+          target.play().catch(() => {});
+        } else {
+          target.pause();
+        }
+      }
+    },
+    { rootMargin: "100px" }
+  );
+
+  for (const gif of gifs) {
+    observer.observe(gif);
+  }
+
+  return () => observer.disconnect();
+}
+
 // Discourse attaches a delegated jQuery handler on ".cooked a" that intercepts
 // ALL link clicks, calls preventDefault, and handles navigation itself.
 // This means target="_blank" is ignored. We stop propagation on every link
@@ -307,6 +363,7 @@ export default {
           }
 
           const rendered = [];
+          const disposers = [];
           let discarded = false;
 
           for (const { id, el: target } of targets) {
@@ -320,6 +377,12 @@ export default {
               preventDiscourseClickInterception(cardEl);
               target.replaceWith(cardEl);
               rendered.push(cardEl);
+
+              // After insertion, so the observer sees real geometry right away.
+              const dispose = activateGifs(cardEl);
+              if (dispose) {
+                disposers.push(dispose);
+              }
             });
           }
 
@@ -327,6 +390,9 @@ export default {
           // video keeps buffering and holding memory after its post is gone.
           return () => {
             discarded = true;
+            for (const dispose of disposers) {
+              dispose();
+            }
             for (const cardEl of rendered) {
               for (const video of cardEl.querySelectorAll("video")) {
                 video.pause();
