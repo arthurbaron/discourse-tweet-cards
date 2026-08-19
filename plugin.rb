@@ -1,6 +1,6 @@
 # name: discourse-tweet-cards
 # about: Renders X/Twitter links as native tweet cards via the fxtwitter API
-# version: 0.4.0
+# version: 0.4.1
 # authors: Online Arsenal Community
 # url: https://github.com/arthurbaron/discourse-tweet-cards
 

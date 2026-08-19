@@ -150,14 +150,45 @@ function renderFacet(facet, literal) {
   }
 }
 
+// A facet that says what it covers lets us check the offsets actually line up.
+// Note tweets carry media facets whose indices were computed against the
+// truncated 280 character version of the post, not the full text, so they point
+// into the middle of a sentence. Because a media facet renders as nothing, that
+// silently deleted exactly 23 characters of prose, the length of a t.co link.
+// Facets without an `original` carry no claim to check, so they are trusted.
+function facetOffsetsAgree(facet, literal) {
+  if (!facet.original) {
+    return true;
+  }
+
+  const sameWord = (prefix) =>
+    literal.toLowerCase() === `${prefix}${facet.original}`.toLowerCase();
+
+  switch (facet.type) {
+    case "url":
+    case "media":
+      return literal === facet.original;
+    // Case can differ from the canonical form, e.g. @arsenal for @Arsenal.
+    case "mention":
+      return sameWord("@");
+    case "hashtag":
+      return sameWord("#");
+    case "symbol":
+      return sameWord("$");
+    default:
+      return true;
+  }
+}
+
 // Replaces regex matching on the rendered HTML, which broke on any hashtag or
 // handle outside plain ASCII. The API hands us exact entity offsets instead.
 //
-// Two traps in that data. First, Twitter counts offsets in Unicode code points
+// Three traps in that data. First, Twitter counts offsets in Unicode code points
 // while JS strings are indexed in UTF-16, so one emoji earlier in the text shifts
 // every later index by one and naive slicing tears the emoji in half. Splitting
 // to a code point array fixes that. Second, several facets can cover the same
-// range, for instance two photos sharing one t.co link.
+// range, for instance two photos sharing one t.co link. Third, some offsets do
+// not match their own facet at all, which facetOffsetsAgree filters out.
 function renderTweetText(tweet) {
   const raw = tweet.raw_text;
   if (!raw?.text) {
@@ -165,7 +196,11 @@ function renderTweetText(tweet) {
   }
 
   const chars = Array.from(raw.text);
-  const [start, end] = raw.display_text_range ?? [0, chars.length];
+  const [rangeStart, rangeEnd] = raw.display_text_range ?? [0, chars.length];
+  // Note tweets report a range that ends past their own text, so clamp both ends
+  // before anything gets compared against them.
+  const start = Math.max(0, Math.min(rangeStart, chars.length));
+  const end = Math.max(start, Math.min(rangeEnd, chars.length));
   const cardUrl = tweet.card?.url;
 
   const facets = (raw.facets || [])
@@ -184,6 +219,11 @@ function renderTweetText(tweet) {
       continue;
     }
 
+    const literal = chars.slice(from, to).join("");
+    if (!facetOffsetsAgree(facet, literal)) {
+      continue;
+    }
+
     // A link card stands in for the URL it was built from, so drop that URL from
     // the text the way X does.
     if (cardUrl && facet.type === "url" && to === end) {
@@ -195,7 +235,7 @@ function renderTweetText(tweet) {
     }
 
     out += plainText(chars.slice(cursor, from).join(""));
-    out += renderFacet(facet, chars.slice(from, to).join(""));
+    out += renderFacet(facet, literal);
     cursor = to;
   }
 
