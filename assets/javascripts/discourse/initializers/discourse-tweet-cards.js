@@ -99,6 +99,20 @@ function pickVideoSource(video) {
   return (withinBudget[withinBudget.length - 1] || mp4s[0]).url;
 }
 
+// Twitter HTML-escapes &, < and > in its classic text field, and raw_text keeps
+// that escaping while its offsets are counted over the escaped form. So decoding
+// has to happen after slicing, never before, or every index shifts.
+//
+// Order matters: &amp; is decoded last. Doing it first would turn a literal
+// "&lt;" that arrived as "&amp;lt;" into a real "<". Escaping happens afterwards
+// in plainText, so this never widens what the browser will execute.
+function decodeEntities(str) {
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
 function plainText(str) {
   return safeText(str).replace(/\n/g, "<br>");
 }
@@ -219,7 +233,7 @@ function renderTweetText(tweet) {
       continue;
     }
 
-    const literal = chars.slice(from, to).join("");
+    const literal = decodeEntities(chars.slice(from, to).join(""));
     if (!facetOffsetsAgree(facet, literal)) {
       continue;
     }
@@ -227,19 +241,18 @@ function renderTweetText(tweet) {
     // A link card stands in for the URL it was built from, so drop that URL from
     // the text the way X does.
     if (cardUrl && facet.type === "url" && to === end) {
-      out += plainText(chars.slice(cursor, from).join("")).replace(
-        /(\s|<br>)+$/,
-        ""
-      );
+      out += plainText(
+        decodeEntities(chars.slice(cursor, from).join(""))
+      ).replace(/(\s|<br>)+$/, "");
       return out;
     }
 
-    out += plainText(chars.slice(cursor, from).join(""));
+    out += plainText(decodeEntities(chars.slice(cursor, from).join("")));
     out += renderFacet(facet, literal);
     cursor = to;
   }
 
-  return out + plainText(chars.slice(cursor, end).join(""));
+  return out + plainText(decodeEntities(chars.slice(cursor, end).join("")));
 }
 
 function renderLinkCard(card) {
